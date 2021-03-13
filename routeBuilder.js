@@ -1,5 +1,6 @@
 
 // rework route representation, separate definition/modification of route from mapbox interaction
+// add direct property to waypoint and leg for serialization
 // fix route hover showing when mousing over waypoint
 // delete waypoint (from list or on click, mouseenter not reliable)
 // stop "recording"
@@ -15,9 +16,9 @@ window.addEventListener('load', function() {
     const InsertTypeEnum = Object.freeze({'insert': 0, 'replace': 1});
 
     const route = {
-        waypoints: [],
-        legs: [],
-        directions: [] 
+        waypoints: [],  // lngLat cords TODO: change to geoJSON point (w/ direct property)
+        legs: [],       // geoJSON LineStrings TODO: add direct property
+        directions: []  // whatever mapbox returns
     }
 
     let draggedLegIndex = null, activeWaypointIndex = null;
@@ -146,6 +147,7 @@ window.addEventListener('load', function() {
                     lineString = coordsToLineString(leg.geometry.coordinates, legIndex);
                 }
 
+                route.legs.push(lineString);
                 drawRoute(legIndex, lineString, InsertTypeEnum.insert, goingDirect);    
     
             }
@@ -238,6 +240,7 @@ window.addEventListener('load', function() {
                 lineString = coordsToLineString(leg.geometry.coordinates, backLegIndex);
             }
 
+            route.legs.splice(backLegIndex, InsertTypeEnum.replace, lineString);
             drawRoute(backLegIndex, lineString, InsertTypeEnum.replace, legIsDirect);  
         }
         
@@ -257,6 +260,7 @@ window.addEventListener('load', function() {
                 lineString = coordsToLineString(leg.geometry.coordinates, frontLegIndex);
             }
 
+            route.legs.splice(frontLegIndex, InsertTypeEnum.replace, lineString);
             drawRoute(frontLegIndex, lineString, InsertTypeEnum.replace, legIsDirect); 
         }         
     
@@ -317,6 +321,8 @@ window.addEventListener('load', function() {
             frontLineString = coordsToLineString(frontLeg.geometry.coordinates, frontLegIndex);
         }
 
+        route.legs.splice(backLegIndex, InsertTypeEnum.replace, backLineString);
+        route.legs.splice(frontLegIndex, InsertTypeEnum.insert, frontLineString);
         drawRoute(backLegIndex, backLineString, InsertTypeEnum.replace, legIsDirect);
         drawRoute(frontLegIndex, frontLineString, InsertTypeEnum.insert, legIsDirect);
         

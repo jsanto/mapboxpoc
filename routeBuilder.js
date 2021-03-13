@@ -17,7 +17,7 @@ window.addEventListener('load', function() {
 
     const route = {
         waypoints: [],  // geoJSON point (w/ direct property)
-        legs: [],       // geoJSON LineStrings TODO: add direct property
+        legs: [],       // geoJSON LineStrings (w/ direct property)
         directions: []  // whatever mapbox returns
     }
 
@@ -141,23 +141,23 @@ window.addEventListener('load', function() {
                 const point = coordsToWaypointPoint(coords, index, goingDirect);    
 
                 route.waypoints.push(point);
-                drawWaypoints();
                 
                 let lineString = null;
                 const start = route.waypoints[prevIndex].geometry.coordinates;
                 const end = route.waypoints[index].geometry.coordinates;
                 if (goingDirect) {
-                    lineString = coordsToLineString([start, end], legIndex);
+                    lineString = coordsToLineString([start, end], legIndex, goingDirect);
                 } else {
                     // todo: pull directions for use?
                     const json = await getDirections(start, end);
                     const leg = json.routes[0];
-                    lineString = coordsToLineString(leg.geometry.coordinates, legIndex);
+                    lineString = coordsToLineString(leg.geometry.coordinates, legIndex, goingDirect);
                 }
 
                 route.legs.push(lineString);
-                drawRoute(legIndex, lineString, InsertTypeEnum.insert, goingDirect);    
-    
+
+                drawWaypoints();
+                drawRoute();     
             }
         });
     
@@ -175,7 +175,7 @@ window.addEventListener('load', function() {
         });
 
         map.on('mouseenter', 'waypoints', function(e) {
-            console.log(e.point);
+            //console.log(e.point);
         });
         
         //capture shift press for direct routing
@@ -202,10 +202,6 @@ window.addEventListener('load', function() {
             data.features[0].geometry.coordinates = coords;
             layer.setData(data);
             map.setLayoutProperty('legSplitter', 'visibility', 'visible');
-
-            //const index = 0;  // only one point on the routeDragger layer, overwrite
-            //const point = coordsToWaypointPoint(coords, legId, false);
-            //addWaypointToLayer('legSplitter', point, index, InsertTypeEnum.replace);
         });
     
         // remove waypoint viz
@@ -247,16 +243,15 @@ window.addEventListener('load', function() {
             const start = route.waypoints[prevIndex].geometry.coordinates;
             const end   = route.waypoints[activeWaypointIndex].geometry.coordinates;
             if (legIsDirect) {
-                lineString = coordsToLineString([start, end], backLegIndex);
+                lineString = coordsToLineString([start, end], backLegIndex, legIsDirect);
             } else {
                 // todo: pull directions for use?
                 const json = await getDirections(start, end);
                 const leg = json.routes[0];
-                lineString = coordsToLineString(leg.geometry.coordinates, backLegIndex);
+                lineString = coordsToLineString(leg.geometry.coordinates, backLegIndex, legIsDirect);
             }
 
-            route.legs.splice(backLegIndex, InsertTypeEnum.replace, lineString);
-            drawRoute(backLegIndex, lineString, InsertTypeEnum.replace, legIsDirect);  
+            route.legs.splice(backLegIndex, InsertTypeEnum.replace, lineString); 
         }
         
         // front leg
@@ -269,22 +264,23 @@ window.addEventListener('load', function() {
             const start = route.waypoints[activeWaypointIndex].geometry.coordinates;
             const end = route.waypoints[nextIndex].geometry.coordinates;
             if (legIsDirect) {
-                lineString = coordsToLineString([start, end], frontLegIndex);
+                lineString = coordsToLineString([start, end], frontLegIndex, legIsDirect);
             } else {
                 // todo: pull directions for use?
                 const json = await getDirections(start, end);
                 const leg = json.routes[0];
-                lineString = coordsToLineString(leg.geometry.coordinates, frontLegIndex);
+                lineString = coordsToLineString(leg.geometry.coordinates, frontLegIndex, legIsDirect);
             }
 
             route.legs.splice(frontLegIndex, InsertTypeEnum.replace, lineString);
-            drawRoute(frontLegIndex, lineString, InsertTypeEnum.replace, legIsDirect); 
         }         
     
+        drawRoute(); 
         map.off('mousemove', onWaypointMove);
     }
     
     function onRouteMove(e) {
+        map.setLayoutProperty('legSplitter', 'visibility', 'visible');
         const coords =  eventToCoords(e);
         const layer = map.getSource('legSplitter');
         const data = layer._data;
@@ -304,31 +300,18 @@ window.addEventListener('load', function() {
             route.waypoints[i].id = i;
         }
 
-        drawWaypoints();
-    
+
         // leg splits will always have front and back
         const prevIndex = newWaypointIndex - 1;
         const nextIndex = newWaypointIndex + 1;
-    
-        // save which routes are currently direct starting at (draggedLegIndex + 1)
-        const directLegs = [];
-        const layer = map.getSource('route');
-        const data = layer._data;
-        for (let i = (draggedLegIndex + 1); i < data.features.length; i++) {
-            const oldState = map.getFeatureState({source: 'route', id: i}).direct ?? false;
-            if (oldState) {
-                directLegs.push(i+1);
-            }
-        }
-    
         const backLegIndex = draggedLegIndex;
         const frontLegIndex = draggedLegIndex + 1;
-        const legIsDirect = map.getFeatureState({source: 'route', id: draggedLegIndex}).direct ?? false;
+        const legIsDirect = route.legs[draggedLegIndex].properties.direct ?? false;
         
         let backLineString = null, frontLineString = null;
         if (legIsDirect) {
-            backLineString = coordsToLineString([route.waypoints[prevIndex].geometry.coordinates, route.waypoints[newWaypointIndex].geometry.coordinates], backLegIndex);
-            frontLineString = coordsToLineString([route.waypoints[newWaypointIndex].geometry.coordinates, route.waypoints[nextIndex].geometry.coordinates], frontLegIndex);
+            backLineString = coordsToLineString([route.waypoints[prevIndex].geometry.coordinates, route.waypoints[newWaypointIndex].geometry.coordinates], backLegIndex, legIsDirect);
+            frontLineString = coordsToLineString([route.waypoints[newWaypointIndex].geometry.coordinates, route.waypoints[nextIndex].geometry.coordinates], frontLegIndex, legIsDirect);
         } else {
             // todo: pull directions for use?
             const backDirections = getDirections(route.waypoints[prevIndex].geometry.coordinates, route.waypoints[newWaypointIndex].geometry.coordinates);
@@ -337,37 +320,24 @@ window.addEventListener('load', function() {
             const[backJson, frontJson] = await Promise.all([backDirections, frontDirections]);
              
             const backLeg = backJson.routes[0];
-            backLineString = coordsToLineString(backLeg.geometry.coordinates, backLegIndex);
+            backLineString = coordsToLineString(backLeg.geometry.coordinates, backLegIndex, legIsDirect);
 
             const frontLeg = frontJson.routes[0];
-            frontLineString = coordsToLineString(frontLeg.geometry.coordinates, frontLegIndex);
+            frontLineString = coordsToLineString(frontLeg.geometry.coordinates, frontLegIndex, legIsDirect);
         }
 
         route.legs.splice(backLegIndex, InsertTypeEnum.replace, backLineString);
         route.legs.splice(frontLegIndex, InsertTypeEnum.insert, frontLineString);
-        drawRoute(backLegIndex, backLineString, InsertTypeEnum.replace, legIsDirect);
-        drawRoute(frontLegIndex, frontLineString, InsertTypeEnum.insert, legIsDirect);
         
-        // renumber and reset the rest of the legs
+        // reset following leg IDs
         const reindexStart = (draggedLegIndex + 2);
-        for (let i = reindexStart; i < data.features.length; i++) {
-            data.features[i].id = i;
-    
-            if (directLegs.includes(i)) {
-                map.setFeatureState({source:'route', id: i}, {direct: true});
-            } else {
-                map.setFeatureState({source:'route', id: i}, {direct: false});
-            }
+        for (let i = reindexStart; i < route.legs.length; i++) {
+            route.legs[i].id = i;
         }
-    
-        // force refresh of layer to repaint
-        layer.setData(data);
-    
-        // hide the router Dragger pip
-        if (map.getLayer('legSplitter')) {
-            map.setLayoutProperty('legSplitter', 'visibility', 'none');
-        }
-    
+
+        drawWaypoints();
+        drawRoute();
+        map.setLayoutProperty('legSplitter', 'visibility', 'none');    
         map.off('mousemove', onRouteMove);
     }
     
@@ -382,12 +352,13 @@ window.addEventListener('load', function() {
         }
     }
     
-    function drawRoute(legIndex, lineString, insertType, goDirect) {
+    function drawRoute() {
         const layer = map.getSource('route');
         const data = layer._data;
-    
-        data.features.splice(legIndex, insertType, lineString); 
-        map.setFeatureState({ source: 'route', id: legIndex }, { direct: goDirect });
+        data.features = route.legs;
+        route.legs.forEach( function(leg) {
+            map.setFeatureState({source:'route', id: leg.id}, { direct: leg.properties.direct });
+        });
     
         layer.setData(data);
     }
@@ -401,11 +372,11 @@ window.addEventListener('load', function() {
         layer.setData(data);
     }
  
-    function coordsToLineString(route, id) {
+    function coordsToLineString(route, id, direct) {
         return {
             id: id,
             type: 'Feature',
-            properties: {},
+            properties: { direct: direct },
             geometry: {
                 type: 'LineString',
                 coordinates: route

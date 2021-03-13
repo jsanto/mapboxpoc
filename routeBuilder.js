@@ -1,4 +1,6 @@
 
+// rework route representation, separate definition/modification of route from mapbox interaction
+// fix route hover showing when mousing over waypoint
 // delete waypoint (from list or on click, mouseenter not reliable)
 // stop "recording"
 // snap waypoints to "grid"
@@ -12,7 +14,12 @@
 window.addEventListener('load', function() {
     const InsertTypeEnum = Object.freeze({'insert': 0, 'replace': 1});
 
-    const waypoints = [];
+    const route = {
+        waypoints: [],
+        legs: [],
+        directions: [] 
+    }
+
     let draggedLegIndex = null, activeWaypointIndex = null;
     let goingDirect = false;
     
@@ -62,7 +69,7 @@ window.addEventListener('load', function() {
         // route dragger (router splitter dot thing)
         // render layer before(under) waypoints so waypoint drags take precedence
         map.addLayer({
-            id: 'routeDragger',
+            id: 'legSplitter',
             type: 'circle',
             source: {
                 type: 'geojson',
@@ -107,37 +114,36 @@ window.addEventListener('load', function() {
                 'line-width': 5,
                 'line-opacity': 0.75
             }
-        }, 'routeDragger');
+        }, 'legSplitter');
     
         // click to add waypoints
         map.on('click', async function(e) {
             const coords = eventToCoords(e);
     
             // Add starting point to the map
-            if (waypoints.length == 0) {
+            if (route.waypoints.length == 0) {
                 const index = 0;
                 const point = coordsToWaypointPoint(coords, index);
     
-                waypoints.push(coords);
+                route.waypoints.push(coords);
                 addWaypointToLayer('waypoints', point, index, InsertTypeEnum.insert);
             } else {
-                const index = waypoints.length;
+                const index = route.waypoints.length;
                 const legIndex = index - 1;
                 const prevIndex = index - 1;
                 const point = coordsToWaypointPoint(coords, index);    
 
-                waypoints.push(coords);
+                route.waypoints.push(coords);
                 addWaypointToLayer('waypoints', point, index, InsertTypeEnum.insert);
                 
                 let lineString = null;
                 if (goingDirect) {
-                    lineString = coordsToLineString([waypoints[prevIndex], waypoints[index]], legIndex);
+                    lineString = coordsToLineString([route.waypoints[prevIndex], route.waypoints[index]], legIndex);
                 } else {
                     // todo: pull directions for use?
-                    const json = await getDirections(waypoints[prevIndex], waypoints[index]);
-                    const route = json.routes[0];
-                    const leg = route.geometry.coordinates;
-                    lineString = coordsToLineString(leg, legIndex);
+                    const json = await getDirections(route.waypoints[prevIndex], route.waypoints[index]);
+                    const leg = json.routes[0];
+                    lineString = coordsToLineString(leg.geometry.coordinates, legIndex);
                 }
 
                 drawRoute(legIndex, lineString, InsertTypeEnum.insert, goingDirect);    
@@ -183,17 +189,17 @@ window.addEventListener('load', function() {
             const index = 0;  // only one point on the routeDragger layer, overwrite
             const point = coordsToWaypointPoint(coords, legId);
 
-            addWaypointToLayer('routeDragger', point, index, InsertTypeEnum.replace);
-            map.setLayoutProperty('routeDragger', 'visibility', 'visible');
+            addWaypointToLayer('legSplitter', point, index, InsertTypeEnum.replace);
+            map.setLayoutProperty('legSplitter', 'visibility', 'visible');
         });
     
         // remove waypoint viz
         map.on('mouseleave', 'route', function(e) {
-            map.setLayoutProperty('routeDragger', 'visibility', 'none');
+            map.setLayoutProperty('legSplitter', 'visibility', 'none');
         });
     
-        map.on('mousedown', 'routeDragger', function(e) {
-            if (!isTopLayer(e, 'routeDragger')) { return false; }
+        map.on('mousedown', 'legSplitter', function(e) {
+            if (!isTopLayer(e, 'legSplitter')) { return false; }
             e.preventDefault();
             draggedLegIndex = e.features[0].id;
     
@@ -214,7 +220,7 @@ window.addEventListener('load', function() {
     async function onWaypointRelease(e) {
         const coords = eventToCoords(e)
     
-        waypoints[activeWaypointIndex] = coords;
+        route.waypoints[activeWaypointIndex] = coords;
     
         // back leg
         if (activeWaypointIndex > 0) {
@@ -224,33 +230,31 @@ window.addEventListener('load', function() {
     
             let lineString = null;
             if (legIsDirect) {
-                lineString = coordsToLineString([waypoints[prevIndex], waypoints[activeWaypointIndex]], backLegIndex);
+                lineString = coordsToLineString([route.waypoints[prevIndex], route.waypoints[activeWaypointIndex]], backLegIndex);
             } else {
                 // todo: pull directions for use?
-                const json = await getDirections(waypoints[prevIndex], waypoints[activeWaypointIndex]);
-                const route = json.routes[0];
-                const leg = route.geometry.coordinates;
-                lineString = coordsToLineString(leg, backLegIndex);
+                const json = await getDirections(route.waypoints[prevIndex], route.waypoints[activeWaypointIndex]);
+                const leg = json.routes[0];
+                lineString = coordsToLineString(leg.geometry.coordinates, backLegIndex);
             }
 
             drawRoute(backLegIndex, lineString, InsertTypeEnum.replace, legIsDirect);  
         }
         
         // front leg
-        if (activeWaypointIndex !== (waypoints.length - 1)) {
+        if (activeWaypointIndex !== (route.waypoints.length - 1)) {
             const nextIndex = activeWaypointIndex + 1;
             const frontLegIndex = activeWaypointIndex;
             const legIsDirect = map.getFeatureState({source: 'route', id: frontLegIndex}).direct ?? false;
     
             let lineString = null;
             if (legIsDirect) {
-                lineString = coordsToLineString([waypoints[activeWaypointIndex], waypoints[nextIndex]], frontLegIndex);
+                lineString = coordsToLineString([route.waypoints[activeWaypointIndex], route.waypoints[nextIndex]], frontLegIndex);
             } else {
                 // todo: pull directions for use?
-                const json = await getDirections(waypoints[activeWaypointIndex], waypoints[nextIndex]);
-                const route = json.routes[0];
-                const leg = route.geometry.coordinates;
-                lineString = coordsToLineString(leg, frontLegIndex);
+                const json = await getDirections(route.waypoints[activeWaypointIndex], route.waypoints[nextIndex]);
+                const leg = json.routes[0];
+                lineString = coordsToLineString(leg.geometry.coordinates, frontLegIndex);
             }
 
             drawRoute(frontLegIndex, lineString, InsertTypeEnum.replace, legIsDirect); 
@@ -261,7 +265,7 @@ window.addEventListener('load', function() {
     
     function onRouteMove(e) {
         const coords =  eventToCoords(e);
-        const newWaypointLayer = map.getSource('routeDragger');
+        const newWaypointLayer = map.getSource('legSplitter');
         const data = newWaypointLayer._data;
     
         data.features[0].geometry.coordinates = coords;
@@ -273,7 +277,7 @@ window.addEventListener('load', function() {
         const newWaypointIndex = draggedLegIndex + 1;
         const point = coordsToWaypointPoint(coords, newWaypointIndex);
     
-        waypoints.splice(newWaypointIndex, InsertTypeEnum.insert, coords);
+        route.waypoints.splice(newWaypointIndex, InsertTypeEnum.insert, coords);
         addWaypointToLayer('waypoints', point, newWaypointIndex, InsertTypeEnum.insert);
     
         // leg splits will always have front and back
@@ -297,22 +301,20 @@ window.addEventListener('load', function() {
         
         let backLineString = null, frontLineString = null;
         if (legIsDirect) {
-            backLineString = coordsToLineString([waypoints[prevIndex], waypoints[newWaypointIndex]], backLegIndex);
-            frontLineString = coordsToLineString([waypoints[newWaypointIndex], waypoints[nextIndex]], frontLegIndex);
+            backLineString = coordsToLineString([route.waypoints[prevIndex], route.waypoints[newWaypointIndex]], backLegIndex);
+            frontLineString = coordsToLineString([route.waypoints[newWaypointIndex], route.waypoints[nextIndex]], frontLegIndex);
         } else {
             // todo: pull directions for use?
-            const backDirections = getDirections(waypoints[prevIndex], waypoints[newWaypointIndex]);
-            const frontDirections = getDirections(waypoints[newWaypointIndex], waypoints[nextIndex]);
+            const backDirections = getDirections(route.waypoints[prevIndex], route.waypoints[newWaypointIndex]);
+            const frontDirections = getDirections(route.waypoints[newWaypointIndex], route.waypoints[nextIndex]);
             
             const[backJson, frontJson] = await Promise.all([backDirections, frontDirections]);
              
-            const backRoute = backJson.routes[0];
-            const backLeg = backRoute.geometry.coordinates;
-            backLineString = coordsToLineString(backLeg, backLegIndex);
+            const backLeg = backJson.routes[0];
+            backLineString = coordsToLineString(backLeg.geometry.coordinates, backLegIndex);
 
-            const frontRoute = frontJson.routes[0];
-            const frontLeg = frontRoute.geometry.coordinates;
-            frontLineString = coordsToLineString(frontLeg, frontLegIndex);
+            const frontLeg = frontJson.routes[0];
+            frontLineString = coordsToLineString(frontLeg.geometry.coordinates, frontLegIndex);
         }
 
         drawRoute(backLegIndex, backLineString, InsertTypeEnum.replace, legIsDirect);
@@ -334,8 +336,8 @@ window.addEventListener('load', function() {
         layer.setData(data);
     
         // hide the router Dragger pip
-        if (map.getLayer('routeDragger')) {
-            map.setLayoutProperty('routeDragger', 'visibility', 'none');
+        if (map.getLayer('legSplitter')) {
+            map.setLayoutProperty('legSplitter', 'visibility', 'none');
         }
     
         map.off('mousemove', onRouteMove);
@@ -409,7 +411,7 @@ window.addEventListener('load', function() {
     }
     
     function isTopLayer(e, me) {
-        let f = map.queryRenderedFeatures(e.point, {layers: ['waypoints', 'route', 'routeDragger']});
+        let f = map.queryRenderedFeatures(e.point, {layers: ['waypoints', 'route', 'legSplitter']});
         if (f.length > 0) {
             return f[0].layer.id == me;
         }

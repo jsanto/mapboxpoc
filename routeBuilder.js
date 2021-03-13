@@ -24,8 +24,6 @@ window.addEventListener('load', function() {
     let draggedLegIndex = null, activeWaypointIndex = null;
     let goingDirect = false;
     
-    
-    
     mapboxgl.accessToken = 'pk.eyJ1IjoianNhbnRvZG9taW5nbyIsImEiOiJja2w0MGlwa2MwamVwMm5wZXYybnZ3OXZnIn0.8VeiKM_vrozoIHysipWWLw';
     const map = new mapboxgl.Map({
         container: 'map',

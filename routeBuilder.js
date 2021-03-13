@@ -16,7 +16,7 @@ window.addEventListener('load', function() {
     const InsertTypeEnum = Object.freeze({'insert': 0, 'replace': 1});
 
     const route = {
-        waypoints: [],  // lngLat cords TODO: change to geoJSON point (w/ direct property)
+        waypoints: [],  // geoJSON point (w/ direct property)
         legs: [],       // geoJSON LineStrings TODO: add direct property
         directions: []  // whatever mapbox returns
     }
@@ -76,7 +76,15 @@ window.addEventListener('load', function() {
                 type: 'geojson',
                 data: {
                     type: 'FeatureCollection',
-                    features: []
+                    features: [{
+                        id: 0,
+                        type: 'Feature',
+                        properties: {},
+                        geometry: {
+                            type: 'Point',
+                            coordinates: [0,0]
+                        }
+                    }]
                 }
             },
             paint: {
@@ -124,25 +132,27 @@ window.addEventListener('load', function() {
             // Add starting point to the map
             if (route.waypoints.length == 0) {
                 const index = 0;
-                const point = coordsToWaypointPoint(coords, index);
+                const point = coordsToWaypointPoint(coords, index, false);
     
-                route.waypoints.push(coords);
-                addWaypointToLayer('waypoints', point, index, InsertTypeEnum.insert);
+                route.waypoints.push(point);
+                drawWaypoints();
             } else {
                 const index = route.waypoints.length;
                 const legIndex = index - 1;
                 const prevIndex = index - 1;
-                const point = coordsToWaypointPoint(coords, index);    
+                const point = coordsToWaypointPoint(coords, index, goingDirect);    
 
-                route.waypoints.push(coords);
-                addWaypointToLayer('waypoints', point, index, InsertTypeEnum.insert);
+                route.waypoints.push(point);
+                drawWaypoints();
                 
                 let lineString = null;
+                const start = route.waypoints[prevIndex].geometry.coordinates;
+                const end = route.waypoints[index].geometry.coordinates;
                 if (goingDirect) {
-                    lineString = coordsToLineString([route.waypoints[prevIndex], route.waypoints[index]], legIndex);
+                    lineString = coordsToLineString([start, end], legIndex);
                 } else {
                     // todo: pull directions for use?
-                    const json = await getDirections(route.waypoints[prevIndex], route.waypoints[index]);
+                    const json = await getDirections(start, end);
                     const leg = json.routes[0];
                     lineString = coordsToLineString(leg.geometry.coordinates, legIndex);
                 }
@@ -187,12 +197,17 @@ window.addEventListener('load', function() {
         // TODO: add "drag to change route" popup
         map.on('mousemove', 'route', function(e) {
             const coords = eventToCoords(e);
-            const legId = e.features[0].id;
-            const index = 0;  // only one point on the routeDragger layer, overwrite
-            const point = coordsToWaypointPoint(coords, legId);
+            const layer = map.getSource('legSplitter');
+            const data = layer._data;
 
-            addWaypointToLayer('legSplitter', point, index, InsertTypeEnum.replace);
+            data.features[0].id = e.features[0].id; // legId being dragged
+            data.features[0].geometry.coordinates = coords;
+            layer.setData(data);
             map.setLayoutProperty('legSplitter', 'visibility', 'visible');
+
+            //const index = 0;  // only one point on the routeDragger layer, overwrite
+            //const point = coordsToWaypointPoint(coords, legId, false);
+            //addWaypointToLayer('legSplitter', point, index, InsertTypeEnum.replace);
         });
     
         // remove waypoint viz
@@ -212,17 +227,17 @@ window.addEventListener('load', function() {
     
     function onWaypointMove(e) {
         const coords = eventToCoords(e);
-    
         const waypointLayer = map.getSource('waypoints');
         const data = waypointLayer._data;
-        data.features[activeWaypointIndex] = coordsToWaypointPoint(coords, activeWaypointIndex);
+
+        data.features[activeWaypointIndex] = coordsToWaypointPoint(coords, activeWaypointIndex, goingDirect);
         waypointLayer.setData(data);
     }
     
     async function onWaypointRelease(e) {
         const coords = eventToCoords(e)
     
-        route.waypoints[activeWaypointIndex] = coords;
+        route.waypoints[activeWaypointIndex] = coordsToWaypointPoint(coords, activeWaypointIndex, goingDirect);
     
         // back leg
         if (activeWaypointIndex > 0) {
@@ -231,11 +246,13 @@ window.addEventListener('load', function() {
             const legIsDirect = map.getFeatureState({source: 'route', id: backLegIndex}).direct ?? false;
     
             let lineString = null;
+            const start = route.waypoints[prevIndex].geometry.coordinates;
+            const end   = route.waypoints[activeWaypointIndex].geometry.coordinates;
             if (legIsDirect) {
-                lineString = coordsToLineString([route.waypoints[prevIndex], route.waypoints[activeWaypointIndex]], backLegIndex);
+                lineString = coordsToLineString([start, end], backLegIndex);
             } else {
                 // todo: pull directions for use?
-                const json = await getDirections(route.waypoints[prevIndex], route.waypoints[activeWaypointIndex]);
+                const json = await getDirections(start, end);
                 const leg = json.routes[0];
                 lineString = coordsToLineString(leg.geometry.coordinates, backLegIndex);
             }
@@ -251,11 +268,13 @@ window.addEventListener('load', function() {
             const legIsDirect = map.getFeatureState({source: 'route', id: frontLegIndex}).direct ?? false;
     
             let lineString = null;
+            const start = route.waypoints[activeWaypointIndex].geometry.coordinates;
+            const end = route.waypoints[nextIndex].geometry.coordinates;
             if (legIsDirect) {
-                lineString = coordsToLineString([route.waypoints[activeWaypointIndex], route.waypoints[nextIndex]], frontLegIndex);
+                lineString = coordsToLineString([start, end], frontLegIndex);
             } else {
                 // todo: pull directions for use?
-                const json = await getDirections(route.waypoints[activeWaypointIndex], route.waypoints[nextIndex]);
+                const json = await getDirections(start, end);
                 const leg = json.routes[0];
                 lineString = coordsToLineString(leg.geometry.coordinates, frontLegIndex);
             }
@@ -269,20 +288,25 @@ window.addEventListener('load', function() {
     
     function onRouteMove(e) {
         const coords =  eventToCoords(e);
-        const newWaypointLayer = map.getSource('legSplitter');
-        const data = newWaypointLayer._data;
+        const layer = map.getSource('legSplitter');
+        const data = layer._data;
     
         data.features[0].geometry.coordinates = coords;
-        newWaypointLayer.setData(data);
+        layer.setData(data);
     }
     
     async function onRouteRelease(e) {
         const coords =  eventToCoords(e);
         const newWaypointIndex = draggedLegIndex + 1;
-        const point = coordsToWaypointPoint(coords, newWaypointIndex);
+        const point = coordsToWaypointPoint(coords, newWaypointIndex, goingDirect);
     
-        route.waypoints.splice(newWaypointIndex, InsertTypeEnum.insert, coords);
-        addWaypointToLayer('waypoints', point, newWaypointIndex, InsertTypeEnum.insert);
+        // insert and reset following IDs
+        route.waypoints.splice(newWaypointIndex, InsertTypeEnum.insert, point);    
+        for (let i = newWaypointIndex + 1; i < route.waypoints.length; i++) {
+            route.waypoints[i].id = i;
+        }
+
+        drawWaypoints();
     
         // leg splits will always have front and back
         const prevIndex = newWaypointIndex - 1;
@@ -305,12 +329,12 @@ window.addEventListener('load', function() {
         
         let backLineString = null, frontLineString = null;
         if (legIsDirect) {
-            backLineString = coordsToLineString([route.waypoints[prevIndex], route.waypoints[newWaypointIndex]], backLegIndex);
-            frontLineString = coordsToLineString([route.waypoints[newWaypointIndex], route.waypoints[nextIndex]], frontLegIndex);
+            backLineString = coordsToLineString([route.waypoints[prevIndex].geometry.coordinates, route.waypoints[newWaypointIndex].geometry.coordinates], backLegIndex);
+            frontLineString = coordsToLineString([route.waypoints[newWaypointIndex].geometry.coordinates, route.waypoints[nextIndex].geometry.coordinates], frontLegIndex);
         } else {
             // todo: pull directions for use?
-            const backDirections = getDirections(route.waypoints[prevIndex], route.waypoints[newWaypointIndex]);
-            const frontDirections = getDirections(route.waypoints[newWaypointIndex], route.waypoints[nextIndex]);
+            const backDirections = getDirections(route.waypoints[prevIndex].geometry.coordinates, route.waypoints[newWaypointIndex].geometry.coordinates);
+            const frontDirections = getDirections(route.waypoints[newWaypointIndex].geometry.coordinates, route.waypoints[nextIndex].geometry.coordinates);
             
             const[backJson, frontJson] = await Promise.all([backDirections, frontDirections]);
              
@@ -349,30 +373,6 @@ window.addEventListener('load', function() {
         map.off('mousemove', onRouteMove);
     }
     
-    function coordsToLineString(route, id) {
-        return {
-            id: id,
-            type: 'Feature',
-            properties: {},
-            geometry: {
-                type: 'LineString',
-                coordinates: route
-            }
-        }
-    }
-    
-    function coordsToWaypointPoint(coords, id) {
-        return {
-            id: id,
-            type: 'Feature',
-            properties: {},
-            geometry: {
-                type: 'Point',
-                coordinates: coords
-            }
-        }
-    }
-    
     async function getDirections(start, end) {
         const url = 'https://api.mapbox.com/directions/v5/mapbox/cycling/' + start[0] + ',' + start[1] + ';' + end[0] + ',' + end[1] + '?steps=false&geometries=geojson&access_token=' + mapboxgl.accessToken;
         const response = await fetch(url);
@@ -393,22 +393,40 @@ window.addEventListener('load', function() {
     
         layer.setData(data);
     }
-    
-    function addWaypointToLayer(layerName, point, index, insertType) {
-        const layer = map.getSource(layerName);
+
+    // will this be too expensive if the waypoint array is huge? (define huge)
+    function drawWaypoints() {
+        const layer = map.getSource('waypoints');
         const data = layer._data;
-        data.features.splice(index, insertType, point);
-    
-        // update ids after inserted waypoint
-        if (insertType == InsertTypeEnum.insert) {
-            for (let i = index+1; i < data.features.length; i++) {
-                data.features[i].id = i;
-            }
-        }
-    
+        data.features = route.waypoints;
+
         layer.setData(data);
     }
+ 
+    function coordsToLineString(route, id) {
+        return {
+            id: id,
+            type: 'Feature',
+            properties: {},
+            geometry: {
+                type: 'LineString',
+                coordinates: route
+            }
+        }
+    }
     
+    function coordsToWaypointPoint(coords, id, direct) {
+        return {
+            id: id,
+            type: 'Feature',
+            properties: { direct: direct },
+            geometry: {
+                type: 'Point',
+                coordinates: coords
+            }
+        }
+    }
+
     function eventToCoords(e) {
         const coordsObj = e.lngLat;
         return Object.keys(coordsObj).map(function(key) {

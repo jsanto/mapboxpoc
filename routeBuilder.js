@@ -1,8 +1,5 @@
 
-// rework route representation, separate definition/modification of route from mapbox interaction
-// add direct property to waypoint and leg for serialization
 // fix route hover showing when mousing over waypoint
-// delete waypoint (from list or on click, mouseenter not reliable)
 // stop "recording"
 // snap waypoints to "grid"
 // list of waypoints and toggle direct vs directions
@@ -21,7 +18,7 @@ window.addEventListener('load', function() {
         directions: []  // whatever mapbox returns
     }
 
-    let draggedLegIndex = null, activeWaypointIndex = null;
+    let draggedLegIndex = null, activeWaypointIndex = null, deleteWaypointIndex = null;
     let goingDirect = false;
     
     mapboxgl.accessToken = 'pk.eyJ1IjoianNhbnRvZG9taW5nbyIsImEiOiJja2w0MGlwa2MwamVwMm5wZXYybnZ3OXZnIn0.8VeiKM_vrozoIHysipWWLw';
@@ -174,20 +171,75 @@ window.addEventListener('load', function() {
             map.once('mouseup', onWaypointRelease);
         });
 
+        // track waypoint hovers for deletion
         map.on('mouseenter', 'waypoints', function(e) {
-            //console.log(e.point);
+            deleteWaypointIndex = e.features[0].id;
         });
-        
-        //capture shift press for direct routing
+
+        map.on('mouseleave', 'waypoints', function(e) {
+            deleteWaypointIndex = null;
+        });
+
+        // keyboard events
         document.addEventListener('keydown', function(e) {
             if (e.key == 'Shift') {
                 goingDirect = true;
             }
         });
         
-        document.addEventListener('keyup', function(e) {
+        document.addEventListener('keyup', async function(e) {
             if (e.key == 'Shift') {
                 goingDirect = false;
+            }
+
+            if ((e.key == 'Delete' || e.key == 'Backspace') && deleteWaypointIndex != null) {
+                const lastLegIndex = route.legs.length - 1;
+                const backLegIndex = deleteWaypointIndex - 1;
+                const frontLegIndex = deleteWaypointIndex;
+                const direct = ((deleteWaypointIndex + 1) < route.waypoints.length) 
+                    ? route.waypoints[(deleteWaypointIndex + 1)].properties.direct
+                    : false;
+
+                // remove and reset following IDs
+                route.waypoints.splice(deleteWaypointIndex, 1);
+                for (let i = deleteWaypointIndex; i < route.waypoints.length; i++) {
+                    route.waypoints[i].id = i;
+                }
+
+                // removed head
+                if (deleteWaypointIndex == 0) {
+                    route.legs.splice(frontLegIndex, 1);
+
+                // removed tail
+                } else if (deleteWaypointIndex == route.waypoints.length) {
+                    route.legs.splice(backLegIndex, 1);
+
+                // removed a middle waypoint    
+                } else {
+                    const start = route.waypoints[(deleteWaypointIndex - 1)].geometry.coordinates;
+                    const end = route.waypoints[deleteWaypointIndex].geometry.coordinates;
+                    let lineString = null;
+
+                    if (direct) {
+                        lineString = coordsToLineString([start, end], backLegIndex, direct);
+                    } else {
+                        // todo: pull directions for use?
+                        const json = await getDirections(start, end);
+                        const leg = json.routes[0];
+                        lineString = coordsToLineString(leg.geometry.coordinates, backLegIndex, direct);
+                    }
+
+                    // remove back and front at the same time when inserting this lineString
+                    route.legs.splice(backLegIndex, 2, lineString); 
+                }
+ 
+                // reset following leg IDs
+                for (let i = frontLegIndex; i < route.legs.length; i++) {
+                    route.legs[i].id = i;
+                }
+
+                drawWaypoints();
+                drawRoute();
             }
         });
     

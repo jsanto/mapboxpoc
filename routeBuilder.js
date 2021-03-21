@@ -16,7 +16,7 @@ window.addEventListener('load', function() {
     const route = {
         waypoints: [],  // geoJSON point (w/ direct property)
         legs: [],       // geoJSON LineStrings (w/ direct property)
-        directions: []  // array of <li> with nav instructions per leg
+        directions: []  // array of custom step objects { instruction, type }
     }
 
     let draggedLegIndex = null, activeWaypointIndex = null, deleteWaypointIndex = null;
@@ -147,13 +147,6 @@ window.addEventListener('load', function() {
                 let [lineString, legSteps] = await processDirections(start, end, legIndex, goingDirect);
                 
                 route.legs.push(lineString);
-
-                // pop off "you have arrived at your destination step"
-                const tail = (route.directions.length - 1);
-                if (tail >= 0 && route.directions[tail].length > 1) {
-                    route.directions[tail].pop();   
-                }
-
                 route.directions.push(legSteps);
 
                 drawDirections();
@@ -310,7 +303,7 @@ window.addEventListener('load', function() {
             const end = route.waypoints[nextIndex].geometry.coordinates;
             
             let [lineString, legSteps] = await processDirections(start, end, frontLegIndex, legIsDirect);
-
+            
             route.legs.splice(frontLegIndex, InsertTypeEnum.replace, lineString);
             route.directions.splice(frontLegIndex, InsertTypeEnum.replace, legSteps);
         }         
@@ -351,12 +344,6 @@ window.addEventListener('load', function() {
         const backStart = route.waypoints[prevIndex].geometry.coordinates;
         const backEnd = route.waypoints[newWaypointIndex].geometry.coordinates;
         let [backLineString, backLegSteps] = await processDirections(backStart, backEnd, backLegIndex, legIsDirect);
-        
-        // backLegSteps from mapbox directions will always have that 
-        // "you have arrived at your destination" so pop it off
-        if (!legIsDirect) {
-            backLegSteps.pop();
-        }
 
         const frontStart = route.waypoints[newWaypointIndex].geometry.coordinates;
         const frontEnd = route.waypoints[nextIndex].geometry.coordinates;
@@ -396,36 +383,58 @@ window.addEventListener('load', function() {
         if (direct) {
             const readableWaypointID = legIndex + 2;
             lineString = coordsToLineString([start, end], legIndex, direct);
-            legSteps.push(`<li>Travel direct to waypoint #${readableWaypointID}.</li>`);
+            legSteps.push({
+                instruction: `Travel direct to waypoint #${readableWaypointID}.`,
+                type: 'direct',
+            });
         } else {
             const json = await getDirections(start, end);
             const leg = json.routes[0];
             lineString = coordsToLineString(leg.geometry.coordinates, legIndex, direct);
 
-            let steps = leg.legs[0].steps;
+            const steps = leg.legs[0].steps;
             for (let i = 0; i < steps.length; i++) {
-                legSteps.push('<li>' + steps[i].maneuver.instruction + '</li>');
+                legSteps.push({ 
+                    instruction: steps[i].maneuver.instruction,
+                    type: steps[i].maneuver.type,
+                });
             }
         }
 
         return [lineString, legSteps];
     }
 
-
     function drawDirections() {
         const instructions = document.getElementById('instructions');
 
-        // remove duplicates (head east on * x2 when a waypoint splits leg on same trail/road)
-        const flatDirections = route.directions.flat();
-        const dedupedDirections = flatDirections.filter(function(item, idx, self) { return self.indexOf(item) === idx});
+        // build table, filtering out arrival steps mid route
+        const flatDirections = [];
+        for (let i = 0; i < route.directions.length; i++) {
+            for (let j = 0; j < route.directions[i].length; j++) {
+                let step = route.directions[i][j];
+                
+                if (step.type == 'arrive' && i != (route.directions.length - 1)) {
+                    // don't use arrival steps mid route
+                } else {
+                    let text = `<li>${step.instruction}</li>`;
+
+                    // don't repeat identical instructions
+                    // TODO: accumulate distance and duration
+                    if (text != flatDirections[(flatDirections.length - 1)])
+                    {
+                        flatDirections.push(text);
+                    }
+                }
+            }
+        }
 
         if (route.directions.length == 0) {
-            instructions.innerHTML = '<p>Click to start route.</p>';
+            instructions.innerHTML = '<h3>Route Directions</h3><p>Click to add waypoints and create a route.</p>';
         } else {
-            instructions.innerHTML = '<h3>Route Directions</h3><ol>' + dedupedDirections.join('') + '</ol>';
+            instructions.innerHTML = '<h3>Route Directions</h3><ol>' + flatDirections.join('') + '</ol>';
         }
     }
-    
+
     function drawRoute() {
         const layer = map.getSource('route');
         const data = layer._data;

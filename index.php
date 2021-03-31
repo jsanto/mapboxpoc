@@ -27,7 +27,7 @@ if (empty($_SESSION['csrftk'])) $_SESSION['csrftk'] = bin2hex(random_bytes(32));
             position: absolute;
             margin: 20px 20px 20px 20px;
             width: 25%;
-            top: 12em;
+            top: 18em;
             bottom: 0;
             padding: 20px;
             background-color: rgba(255, 255, 255, 0.9);
@@ -41,13 +41,17 @@ if (empty($_SESSION['csrftk'])) $_SESSION['csrftk'] = bin2hex(random_bytes(32));
             position: absolute;
             margin: 10px 0 20px 20px;
             width: 25%;
-            height: 6em;
+            height: 11em;
             top: 0;
             padding: 20px;
             background-color: rgba(255, 255, 255, 0.9);
             font-family: sans-serif;
             font-size: 0.8em
             line-height: 2em;
+        }
+
+        #legend {
+            font-size: 0.8em;
         }
 
         #buttons {
@@ -120,13 +124,17 @@ if (empty($_SESSION['csrftk'])) $_SESSION['csrftk'] = bin2hex(random_bytes(32));
 <div id='map'></div>
 <div id='instructions'><h3>Directions</h3><p>Click to add waypoints and create a route.</p></div>
 <div id='controlbox'>
-        <button id='new' name='new'>Create New Route</button><br />
-        <label for='name'>Name:</label><br />
-        <input type='text' id='name' name='name' placeholder='Give your route a name.' /><br />
-        <div id='buttons'>
-            <button id='save' name='save'>Save Route</button>
-            <button id='load' name='load'>Load Saved Route</button>
-        </div>
+    <button id='new' name='new'>Create New Route</button><br />
+    <label for='name'>Name:</label><br />
+    <input type='text' id='name' name='name' placeholder='Give your route a name.' /><br />
+    <div id='buttons'>
+        <button id='save' name='save'>Save Route</button>
+        <button id='load' name='load'>Load Saved Route</button>
+    </div>
+    <div id='legend'>
+        <p>Hold [Shift] when adding waypoints to route directly (as the crow flies).</p>
+        <p>Hover over a waypoint and use [Delete] to delete.</p>
+    </div>
 </div>
 <div id='routeList'></div>
 <div id='hoverTip'></div>

@@ -101,6 +101,19 @@ if (empty($_SESSION['csrftk'])) $_SESSION['csrftk'] = bin2hex(random_bytes(32));
             cursor: default;
         }
 
+        #hoverTip {
+            display: none;
+
+            width: 12em;
+            height: 1em;
+            position: absolute;
+            font-size: 0.75em;
+            padding: 2px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid #333;
+            
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -116,6 +129,7 @@ if (empty($_SESSION['csrftk'])) $_SESSION['csrftk'] = bin2hex(random_bytes(32));
         </div>
 </div>
 <div id='routeList'></div>
+<div id='hoverTip'></div>
 <script src='routeBuilder.js'></script>
 <input type='hidden' id='csrftk' name='csrftk' value='<?php echo $_SESSION['csrftk']; ?>' />
 </body>

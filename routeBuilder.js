@@ -1,4 +1,3 @@
-// fix route hover showing when mousing over waypoint (isTopLayer is too slow for hover effects)
 // toggle editting mode?
 // snap waypoints to "grid"
 // list of waypoints and toggle direct vs directions
@@ -183,6 +182,13 @@ window.addEventListener('load', function() {
 
         map.on('mouseleave', 'waypoints', function(e) {
             deleteWaypointIndex = null;
+
+            const hoverTip = document.getElementById('hoverTip');
+            hoverTip.style.display = 'none';
+        });
+
+        map.on('mousemove', 'waypoints', function(e) {
+            drawHoverTip(e, 'Drag to move waypoint.<br>[Delete] to delete waypoint.', '2.5em');
         });
 
         // keyboard events
@@ -245,8 +251,9 @@ window.addEventListener('load', function() {
         });
     
         // draw route change dot
-        // TODO: add "drag to change route" popup
         map.on('mousemove', 'route', function(e) {
+            if (!isTopLayer(e, 'route')) { return false; }
+
             const coords = eventToCoords(e);
             const layer = map.getSource('legSplitter');
             const data = layer._data;
@@ -255,13 +262,40 @@ window.addEventListener('load', function() {
             data.features[0].geometry.coordinates = coords;
             layer.setData(data);
             map.setLayoutProperty('legSplitter', 'visibility', 'visible');
+
+            drawHoverTip(e, 'Drag to change route.', '1em');
         });
-    
+
+        map.on('mousemove', 'legSplitter', function(e) {
+            if (!isTopLayer(e, 'legSplitter')) { return false; }
+
+            const coords = eventToCoords(e);
+            const layer = map.getSource('legSplitter');
+            const data = layer._data;
+
+            data.features[0].id = e.features[0].id; // legId being dragged
+            data.features[0].geometry.coordinates = coords;
+            layer.setData(data);
+            map.setLayoutProperty('legSplitter', 'visibility', 'visible');
+
+            drawHoverTip(e, 'Drag to change route.', '1em');
+        });
+
+        map.on('mouseleave', 'legSplitter', function(e) { 
+            map.setLayoutProperty('legSplitter', 'visibility', 'none');  
+            
+            const hoverTip = document.getElementById('hoverTip');
+            hoverTip.style.display = 'none';
+        });
+
         // remove waypoint viz
         map.on('mouseleave', 'route', function(e) {
-            map.setLayoutProperty('legSplitter', 'visibility', 'none');
+            map.setLayoutProperty('legSplitter', 'visibility', 'none');  
+            
+            const hoverTip = document.getElementById('hoverTip');
+            hoverTip.style.display = 'none';
         });
-    
+
         map.on('mousedown', 'legSplitter', function(e) {
             if (!isTopLayer(e, 'legSplitter')) { return false; }
             e.preventDefault();
@@ -461,6 +495,30 @@ window.addEventListener('load', function() {
         data.features = route.data.waypoints;
 
         layer.setData(data);
+    }
+
+    function drawHoverTip(e, msg, height) {
+        const hoverTip = document.getElementById('hoverTip');
+        hoverTip.innerHTML = msg;
+        hoverTip.style.height = height;
+        
+        hoverTip.style.display = 'block';
+        hoverTip.style.top = 0;
+        hoverTip.style.right = 0;
+        hoverTip.style.bottom = 0;
+        hoverTip.style.left = 0;
+
+        if (window.innerWidth - e.point.x < 200) {
+            hoverTip.style.left = `${(e.point.x - 130)}px`;
+        } else {
+            hoverTip.style.left =  `${e.point.x + 10}px`;
+        }
+
+        if (window.innerHeight - e.point.y < 50) {
+            hoverTip.style.top = `${e.point.y - 20}px`;
+        } else {
+            hoverTip.style.top = `${e.point.y + 10}px`;
+        }
     }
  
     function coordsToLineString(route, id, direct) {

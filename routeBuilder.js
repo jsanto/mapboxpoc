@@ -612,6 +612,10 @@ window.addEventListener('load', function() {
             drawWaypoints();
             drawRoute();
 
+            if (route.data.waypoints.length > 0) {
+                map.flyTo({center: route.data.waypoints[0].geometry.coordinates, zoom: 13});
+            }
+
             rlContainer.style.display = 'none';
         }
     });

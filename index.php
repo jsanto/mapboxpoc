@@ -118,6 +118,12 @@ if (empty($_SESSION['csrftk'])) $_SESSION['csrftk'] = bin2hex(random_bytes(32));
             
             text-align: center;
         }
+
+        #savemsg {
+            font-size: 0.8em;
+            font-weight: bold;
+            margin: 0.2em 0;
+        }
     </style>
 </head>
 <body>
@@ -128,7 +134,7 @@ if (empty($_SESSION['csrftk'])) $_SESSION['csrftk'] = bin2hex(random_bytes(32));
     <label for='name'>Name:</label><br />
     <input type='text' id='name' name='name' placeholder='Give your route a name.' /><br />
     <div id='buttons'>
-        <button id='save' name='save'>Save Route</button>
+        <button id='save' name='save'>Save Route</button><span id='savemsg' name='savemsg'></span>
         <button id='load' name='load'>Load Saved Route</button>
     </div>
     <div id='legend'>

@@ -1,3 +1,4 @@
+// implement undo/redo?
 // toggle editting mode?
 // snap waypoints to "grid"
 // list of waypoints and toggle direct vs directions
@@ -586,7 +587,24 @@ window.addEventListener('load', function() {
 
     const saveButton = document.getElementById('save');
     saveButton.addEventListener('click', function(e) {
-        save();
+        const savemsg = document.getElementById('savemsg');
+        if (save()) {
+            savemsg.style.transition = 'unset';
+            savemsg.style.opacity = 1;
+            
+            savemsg.innerHTML = 'SAVED!';
+            savemsg.style.color = 'green';
+            savemsg.style.transition = 'opacity 10s';
+            savemsg.style.opacity = 0;
+        } else {
+            savemsg.style.transition = 'unset';
+            savemsg.style.opacity = 1;
+            
+            savemsg.innerHTML = 'error saving';
+            savemsg.style.color = 'red';
+            savemsg.style.transition = 'opacity 10s';
+            savemsg.style.opacity = 0;    
+        }
     });
 
     const rlContainer = document.getElementById('routeList');
@@ -633,10 +651,12 @@ async function save() {
 
     if (!response.ok) {
         console.log('Error saving route.');
+        return false;
     } else {
         const retval = await response.json();
         csrftk.value = retval.csrftk;
         route = retval.route;  // will have inserted id now
+        return true;
     }
 }
 
